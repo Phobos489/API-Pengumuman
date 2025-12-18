@@ -163,7 +163,7 @@ class PengumumanController extends Controller
             ], 422);
         }
 
-        $data = $request->except('gambar');
+        $data = $request->except('gambar', '_method');
 
         // Handle image upload
         if ($request->hasFile('gambar')) {
@@ -191,7 +191,7 @@ class PengumumanController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Pengumuman berhasil diupdate',
-            'data' => $pengumuman
+            'data' => $pengumuman->fresh()
         ], 200);
     }
 
