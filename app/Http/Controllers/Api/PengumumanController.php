@@ -5,8 +5,8 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Pengumuman;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\Log;
 
 class PengumumanController extends Controller
 {
@@ -47,14 +47,14 @@ class PengumumanController extends Controller
         $sortOrder = $request->get('sort_order', 'desc');
         $query->orderBy($sortBy, $sortOrder);
 
-        // Pagination
-        $perPage = $request->get('per_page', 15);
-        $pengumumans = $query->paginate($perPage);
+        // Get all data without pagination
+        $pengumumans = $query->get();
 
         return response()->json([
             'success' => true,
             'message' => 'Data pengumuman berhasil diambil',
-            'data' => $pengumumans
+            'data' => $pengumumans,
+            'total' => $pengumumans->count()
         ], 200);
     }
 
@@ -83,6 +83,11 @@ class PengumumanController extends Controller
         }
 
         $data = $request->except('gambar');
+        
+        // Set default status if not provided
+        if (!isset($data['status'])) {
+            $data['status'] = 'published';
+        }
 
         // Handle image upload
         if ($request->hasFile('gambar')) {
@@ -90,6 +95,11 @@ class PengumumanController extends Controller
             $gambarName = time() . '_' . uniqid() . '.' . $gambar->getClientOriginalExtension();
             
             $uploadPath = env('UPLOAD_PATH', '/var/www/assets');
+            
+            // Create directory if not exists
+            if (!file_exists($uploadPath)) {
+                mkdir($uploadPath, 0755, true);
+            }
             
             // Move file to assets folder
             $gambar->move($uploadPath, $gambarName);
@@ -132,9 +142,17 @@ class PengumumanController extends Controller
 
     /**
      * Update the specified resource in storage.
+     * Important: Use POST method with _method=PUT in form-data
      */
     public function update(Request $request, $id)
     {
+        // Log untuk debugging
+        Log::info('Update Request Data:', [
+            'all' => $request->all(),
+            'hasFile' => $request->hasFile('gambar'),
+            'method' => $request->method()
+        ]);
+
         $pengumuman = Pengumuman::find($id);
 
         if (!$pengumuman) {
@@ -163,35 +181,49 @@ class PengumumanController extends Controller
             ], 422);
         }
 
-        $data = $request->except('gambar', '_method');
+        // Get all data except gambar and _method
+        $data = $request->except(['gambar', '_method']);
 
         // Handle image upload
         if ($request->hasFile('gambar')) {
             $uploadPath = env('UPLOAD_PATH', '/var/www/assets');
             
-            // Delete old image
+            // Delete old image if exists
             if ($pengumuman->gambar) {
                 $oldImagePath = $uploadPath . '/' . $pengumuman->gambar;
                 if (file_exists($oldImagePath)) {
                     unlink($oldImagePath);
+                    Log::info('Old image deleted:', ['path' => $oldImagePath]);
                 }
             }
 
             $gambar = $request->file('gambar');
             $gambarName = time() . '_' . uniqid() . '.' . $gambar->getClientOriginalExtension();
             
+            // Create directory if not exists
+            if (!file_exists($uploadPath)) {
+                mkdir($uploadPath, 0755, true);
+            }
+            
             // Move file to assets folder
             $gambar->move($uploadPath, $gambarName);
             
             $data['gambar'] = $gambarName;
+            Log::info('New image uploaded:', ['filename' => $gambarName]);
         }
 
+        // Update the pengumuman
         $pengumuman->update($data);
+
+        // Refresh to get updated data
+        $pengumuman = $pengumuman->fresh();
+
+        Log::info('Pengumuman updated:', ['data' => $pengumuman]);
 
         return response()->json([
             'success' => true,
             'message' => 'Pengumuman berhasil diupdate',
-            'data' => $pengumuman->fresh()
+            'data' => $pengumuman
         ], 200);
     }
 
@@ -235,12 +267,13 @@ class PengumumanController extends Controller
                                  ->published()
                                  ->active()
                                  ->orderBy('created_at', 'desc')
-                                 ->paginate(15);
+                                 ->get();
 
         return response()->json([
             'success' => true,
             'message' => 'Data pengumuman berhasil diambil',
-            'data' => $pengumumans
+            'data' => $pengumumans,
+            'total' => $pengumumans->count()
         ], 200);
     }
 
@@ -252,12 +285,13 @@ class PengumumanController extends Controller
         $pengumumans = Pengumuman::published()
                                  ->active()
                                  ->orderBy('created_at', 'desc')
-                                 ->paginate(15);
+                                 ->get();
 
         return response()->json([
             'success' => true,
             'message' => 'Data pengumuman published berhasil diambil',
-            'data' => $pengumumans
+            'data' => $pengumumans,
+            'total' => $pengumumans->count()
         ], 200);
     }
 }
